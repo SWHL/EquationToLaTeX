@@ -48,8 +48,11 @@ def train(args):
     if args.load_chkpt is not None:
         model.load_state_dict(torch.load(args.load_chkpt, map_location=device))
 
-    def save_models(e, step=0):
-        save_model_path = out_path / f"{args.name}_e{e+1}_step{step:02d}.pth"
+    def save_models(e, bleu, token_acc, step=0):
+        save_model_path = (
+            out_path
+            / f"Epoch{e+1}_step{step:02d}_bleu{bleu:.4f}_tokenacc{token_acc:.4f}.pth"
+        )
         torch.save(model.state_dict(), str(save_model_path))
 
         save_yaml_path = out_path / "config.yaml"
@@ -98,7 +101,9 @@ def train(args):
 
                 opt.step()
                 scheduler.step()
-                dset.set_description("Loss: %.4f" % total_loss)
+                dset.set_description(
+                    f"Epoch {e+1}/{args.epochs} Loss:  {total_loss:.4f}"
+                )
 
                 if args.wandb:
                     wandb.log({"train/loss": total_loss})
@@ -113,10 +118,10 @@ def train(args):
                     )
                     if bleu_score > max_bleu and token_accuracy > max_token_acc:
                         max_bleu, max_token_acc = bleu_score, token_accuracy
-                        save_models(e, step=i)
+                        save_models(e, bleu=max_bleu, token_acc=max_token_acc, step=i)
 
-            if (e + 1) % args.save_freq == 0:
-                save_models(e, step=len(dataloader))
+            # if (e + 1) % args.save_freq == 0:
+            #     save_models(e, step=len(dataloader))
 
             if args.wandb:
                 wandb.log({"train/epoch": e + 1})
@@ -126,7 +131,7 @@ def train(args):
             save_models(e, step=i)
         raise KeyboardInterrupt
 
-    save_models(e, step=len(dataloader))
+    save_models(e, bleu=max_bleu, token_acc=max_token_acc, step=len(dataloader))
 
 
 if __name__ == "__main__":

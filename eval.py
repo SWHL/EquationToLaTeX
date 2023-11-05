@@ -50,6 +50,7 @@ def evaluate(
     log = {}
     bleus, edit_dists, token_acc = [], [], []
     bleu_score, edit_distance, token_accuracy = 0, 1, 0
+
     pbar = tqdm(enumerate(iter(dataset)), total=len(dataset))
     for i, (seq, im) in pbar:
         if seq is None or im is None:
@@ -84,9 +85,11 @@ def evaluate(
         tok_acc = (dec == tgt_seq)[mask].float().mean().item()
         token_acc.append(tok_acc)
 
+        avg_bleus = np.mean(bleus)
+        avg_edit_dists = np.mean(edit_dists)
+        avg_token_acc = np.mean(token_acc)
         pbar.set_description(
-            "BLEU: %.3f, ED: %.2e, ACC: %.3f"
-            % (np.mean(bleus), np.mean(edit_dists), np.mean(token_acc))
+            f"BLEU: {avg_bleus:.3f}, ED: {avg_edit_dists:.3f}, ACC: {avg_token_acc:.3f}"
         )
         if num_batches is not None and i >= num_batches:
             break
