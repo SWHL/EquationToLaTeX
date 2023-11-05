@@ -43,40 +43,53 @@ def prepare_data(dataloader: Im2LatexDataset) -> Tuple[torch.tensor, torch.tenso
             break
         if c > 25:
             return None, None
+
     x, y = 0, 0
     for path in list(ims):
         im = Image.open(path)
         modes = [Image.Resampling.BICUBIC, Image.Resampling.BILINEAR]
         if scale < 1:
             modes.append(Image.Resampling.LANCZOS)
+
         m = modes[int(len(modes) * np.random.random())]
         im = im.resize((int(width * scale), int(height * scale)), m)
         try:
             im = pad(im)
         except:
             return None, None
+
         if im is None:
             print(path, "not found!")
             continue
+
         im = np.array(im)
         im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
         images.append(dataloader.transform(image=im)["image"][:1])
+
         if images[-1].shape[-1] > x:
             x = images[-1].shape[-1]
+
         if images[-1].shape[-2] > y:
             y = images[-1].shape[-2]
+
     if x > dataloader.max_dimensions[0] or y > dataloader.max_dimensions[1]:
         return None, None
-    for i in range(len(images)):
-        h, w = images[i].shape[1:]
-        images[i] = F.pad(images[i], (0, x - w, 0, y - h), value=0)
+
+    for i, img in enumerate(images):
+        h, w = img.shape[1:]
+        images[i] = F.pad(img, (0, x - w, 0, y - h), value=0)
+
     try:
         images = torch.cat(images).float().unsqueeze(1)
     except RuntimeError as e:
         # print(e, 'Images not working: %s' % (' '.join(list(ims))))
         return None, None
+
     dataloader.i += 1
     labels = torch.tensor(width // 32 - 1).repeat(len(ims)).long()
+    import pdb
+
+    pdb.set_trace()
     return images, labels
 
 
@@ -143,8 +156,10 @@ def main(args):
         stem_type="same",
         conv_layer=StdConv2dSame,
     ).to(args.device)
+
     if args.resume:
         model.load_state_dict(torch.load(args.resume))
+
     opt = Adam(model.parameters(), lr=args.lr)
     crit = nn.CrossEntropyLoss()
     sched = OneCycleLR(opt, 0.005, total_steps=args.num_epochs * len(dataloader))
@@ -162,17 +177,21 @@ def main(args):
                     or im.shape[-2] > dataloader.max_dimensions[1]
                 ):
                     continue
+
                 opt.zero_grad()
                 label = label.to(args.device)
 
                 pred = model(im.to(args.device))
                 loss = crit(pred, label)
+
                 if i % 2 == 0:
                     dset.set_description("Loss: %.4f" % loss.item())
+
                 loss.backward()
                 opt.step()
                 if sched is not None:
                     sched.step()
+
             if (i + 1) % args.sample_freq == 0 or i + 1 == len(dset):
                 acc = val(valloader, model, args.valbatches, args.device)
                 print("Accuracy %.2f" % (100 * acc), "%")
@@ -206,11 +225,14 @@ if __name__ == "__main__":
     )
     parser.add_argument("--batchsize", type=int, default=10)
     parsed_args = parser.parse_args()
+
     if parsed_args.config is None:
         with in_model_path():
             parsed_args.config = os.path.realpath("settings/debug.yaml")
-    with open(parsed_args.config, "r") as f:
+
+    with open(parsed_args.config, "r", encoding="utf-8") as f:
         params = yaml.load(f, Loader=yaml.FullLoader)
+
     args = parse_args(Munch(params), **vars(parsed_args))
     args.update(**vars(parsed_args))
     main(args)

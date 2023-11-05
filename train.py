@@ -2,10 +2,10 @@
 import argparse
 import logging
 import os
+from pathlib import Path
 
 import torch
 import wandb
-import yaml
 from munch import Munch
 from tqdm.auto import tqdm
 
@@ -19,33 +19,41 @@ from utils import (
     in_model_path,
     parse_args,
     seed_everything,
+    read_yaml,
+    write_yaml,
+    mkdir,
 )
 
 
 def train(args):
     dataloader = Im2LatexDataset().load(args.data)
     dataloader.update(**args, test=False)
+
     valdataloader = Im2LatexDataset().load(args.valdata)
     valargs = args.copy()
     valargs.update(batchsize=args.testbatchsize, keep_smaller_batches=True, test=True)
     valdataloader.update(**valargs)
+
     device = args.device
+
     model = get_model(args)
     if torch.cuda.is_available() and not args.no_cuda:
         gpu_memory_check(model, args)
+
     max_bleu, max_token_acc = 0, 0
-    out_path = os.path.join(args.model_path, args.name)
-    os.makedirs(out_path, exist_ok=True)
+
+    out_path = Path(args.model_path) / args.name
+    mkdir(out_path)
 
     if args.load_chkpt is not None:
         model.load_state_dict(torch.load(args.load_chkpt, map_location=device))
 
     def save_models(e, step=0):
-        torch.save(
-            model.state_dict(),
-            os.path.join(out_path, "%s_e%02d_step%02d.pth" % (args.name, e + 1, step)),
-        )
-        yaml.dump(dict(args), open(os.path.join(out_path, "config.yaml"), "w+"))
+        save_model_path = out_path / f"{args.name}_e{e+1}_step{step:02d}.pth"
+        torch.save(model.state_dict(), str(save_model_path))
+
+        save_yaml_path = out_path / "config.yaml"
+        write_yaml(save_yaml_path, dict(args))
 
     opt = get_optimizer(args.optimizer)(model.parameters(), args.lr, betas=args.betas)
     scheduler = get_scheduler(args.scheduler)(
@@ -61,31 +69,40 @@ def train(args):
             args.epoch = e
             dset = tqdm(iter(dataloader))
             for i, (seq, im) in enumerate(dset):
-                if seq is not None and im is not None:
-                    opt.zero_grad()
-                    total_loss = 0
-                    for j in range(0, len(im), microbatch):
-                        tgt_seq, tgt_mask = seq["input_ids"][j : j + microbatch].to(
-                            device
-                        ), seq["attention_mask"][j : j + microbatch].bool().to(device)
-                        loss = (
-                            model.data_parallel(
-                                im[j : j + microbatch].to(device),
-                                device_ids=args.gpu_devices,
-                                tgt_seq=tgt_seq,
-                                mask=tgt_mask,
-                            )
-                            * microbatch
-                            / args.batchsize
+                if seq is None and im is None:
+                    continue
+
+                opt.zero_grad()
+
+                total_loss = 0
+                for j in range(0, len(im), microbatch):
+                    tgt_seq = seq["input_ids"][j : j + microbatch].to(device)
+                    tgt_mask = (
+                        seq["attention_mask"][j : j + microbatch].bool().to(device)
+                    )
+
+                    loss = (
+                        model.data_parallel(
+                            im[j : j + microbatch].to(device),
+                            device_ids=args.gpu_devices,
+                            tgt_seq=tgt_seq,
+                            mask=tgt_mask,
                         )
-                        loss.backward()  # data parallism loss is a vector
-                        total_loss += loss.item()
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
-                    opt.step()
-                    scheduler.step()
-                    dset.set_description("Loss: %.4f" % total_loss)
-                    if args.wandb:
-                        wandb.log({"train/loss": total_loss})
+                        * microbatch
+                        / args.batchsize
+                    )
+
+                    loss.backward()
+                    total_loss += loss.item()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+
+                opt.step()
+                scheduler.step()
+                dset.set_description("Loss: %.4f" % total_loss)
+
+                if args.wandb:
+                    wandb.log({"train/loss": total_loss})
+
                 if (i + 1 + len(dataloader) * e) % args.sample_freq == 0:
                     bleu_score, edit_distance, token_accuracy = evaluate(
                         model,
@@ -97,14 +114,18 @@ def train(args):
                     if bleu_score > max_bleu and token_accuracy > max_token_acc:
                         max_bleu, max_token_acc = bleu_score, token_accuracy
                         save_models(e, step=i)
+
             if (e + 1) % args.save_freq == 0:
                 save_models(e, step=len(dataloader))
+
             if args.wandb:
                 wandb.log({"train/epoch": e + 1})
+
     except KeyboardInterrupt:
         if e >= 2:
             save_models(e, step=i)
         raise KeyboardInterrupt
+
     save_models(e, step=len(dataloader))
 
 
@@ -122,16 +143,19 @@ if __name__ == "__main__":
     if parsed_args.config is None:
         with in_model_path():
             parsed_args.config = os.path.realpath("settings/debug.yaml")
-    with open(parsed_args.config, "r") as f:
-        params = yaml.load(f, Loader=yaml.FullLoader)
+
+    params = read_yaml(parsed_args.config)
     args = parse_args(Munch(params), **vars(parsed_args))
+
     logging.getLogger().setLevel(
         logging.DEBUG if parsed_args.debug else logging.WARNING
     )
     seed_everything(args.seed)
+
     if args.wandb:
         if not parsed_args.resume:
             args.id = wandb.util.generate_id()
         wandb.init(config=dict(args), resume="allow", name=args.name, id=args.id)
         args = Munch(wandb.config)
+
     train(args)

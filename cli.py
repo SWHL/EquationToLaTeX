@@ -25,7 +25,6 @@ from torch._appdirs import user_data_dir
 from transformers import PreTrainedTokenizerFast
 
 from data.latex2png import tex2pil
-from model.checkpoints.get_latest_checkpoint import download_checkpoints
 from models import get_model
 from utils import *
 
@@ -47,9 +46,10 @@ def minmax_size(
     """
     if max_dimensions is not None:
         ratios = [a / b for a, b in zip(img.size, max_dimensions)]
-        if any([r > 1 for r in ratios]):
+        if any(r > 1 for r in ratios):
             size = np.array(img.size) // max(ratios)
             img = img.resize(size.astype(int), Image.BILINEAR)
+
     if min_dimensions is not None:
         # hypothesis: there is a dim in img smaller than min_dimensions, and return a proper dim >= min_dimensions
         padded_size = [
@@ -59,6 +59,7 @@ def minmax_size(
             padded_im = Image.new("L", padded_size, 255)
             padded_im.paste(img, img.getbbox())
             img = padded_im
+
     return img
 
 
@@ -78,24 +79,24 @@ class LatexOCR:
         if arguments is None:
             arguments = Munch(
                 {
-                    "config": "settings/config.yaml",
-                    "checkpoint": "checkpoints/weights.pth",
+                    "config": "config/config.yaml",
+                    "checkpoint": "checkpoints/pre_trained/weights.pth",
+                    "img_resizer_path": "checkpoints/pre_trained/image_resizer.pth",
                     "no_cuda": True,
                     "no_resize": False,
                 }
             )
         logging.getLogger().setLevel(logging.FATAL)
         os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-        with open(arguments.config, "r") as f:
+        with open(arguments.config, "r", encoding="utf-8") as f:
             params = yaml.load(f, Loader=yaml.FullLoader)
+
         self.args = parse_args(Munch(params))
         self.args.update(**vars(arguments))
         self.args.wandb = False
         self.args.device = (
             "cuda" if torch.cuda.is_available() and not self.args.no_cuda else "cpu"
         )
-        if not os.path.exists(self.args.checkpoint):
-            download_checkpoints()
         self.model = get_model(self.args)
         self.model.load_state_dict(
             torch.load(self.args.checkpoint, map_location=self.args.device)
@@ -116,11 +117,10 @@ class LatexOCR:
                 stem_type="same",
                 conv_layer=StdConv2dSame,
             ).to(self.args.device)
+
             self.image_resizer.load_state_dict(
                 torch.load(
-                    os.path.join(
-                        os.path.dirname(self.args.checkpoint), "image_resizer.pth"
-                    ),
+                    self.args.img_resizer_path,
                     map_location=self.args.device,
                 )
             )
@@ -138,16 +138,17 @@ class LatexOCR:
         Returns:
             str: predicted Latex code
         """
-        if type(img) is bool:
+        if isinstance(img, bool):
             img = None
+
         if img is None:
             if self.last_pic is None:
                 return ""
-            else:
-                print("\nLast image is: ", end="")
-                img = self.last_pic.copy()
+            print("\nLast image is: ", end="")
+            img = self.last_pic.copy()
         else:
             self.last_pic = img.copy()
+
         img = minmax_size(pad(img), self.args.max_dimensions, self.args.min_dimensions)
         if (self.image_resizer is not None and not self.args.no_resize) and resize:
             with torch.no_grad():
@@ -170,26 +171,25 @@ class LatexOCR:
                     t = test_transform(image=np.array(img.convert("RGB")))["image"][
                         :1
                     ].unsqueeze(0)
+
                     w = (
                         self.image_resizer(t.to(self.args.device)).argmax(-1).item() + 1
                     ) * 32
                     logging.info(r, img.size, (w, int(input_image.size[1] * r)))
                     if w == img.size[0]:
                         break
+
                     r = w / img.size[0]
         else:
             img = np.array(pad(img).convert("RGB"))
             t = test_transform(image=img)["image"][:1].unsqueeze(0)
+
         im = t.to(self.args.device)
 
         dec = self.model.generate(
             im.to(self.args.device), temperature=self.args.get("temperature", 0.25)
         )
         pred = post_process(token2str(dec, self.tokenizer)[0])
-        try:
-            clipboard.copy(pred)
-        except:
-            pass
         return pred
 
 

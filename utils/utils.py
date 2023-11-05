@@ -3,10 +3,12 @@ import os
 import random
 import re
 from inspect import isfunction
+from typing import Union, Dict
 from pathlib import Path
 
 import cv2
 import numpy as np
+import yaml
 import torch
 from munch import Munch
 from PIL import Image
@@ -190,6 +192,7 @@ def pad(img: Image, divable: int = 32) -> Image:
         data = (data[..., 0]).astype(np.uint8)
     else:
         data = (255 - data[..., -1]).astype(np.uint8)
+
     data = (data - data.min()) / (data.max() - data.min()) * 255
     if data.mean() > threshold:
         # To invert the text to white
@@ -206,6 +209,7 @@ def pad(img: Image, divable: int = 32) -> Image:
     for x in [w, h]:
         div, mod = divmod(x, divable)
         dims.append(divable * (div + (1 if mod > 0 else 0)))
+
     padded = Image.new("L", dims, 255)
     padded.paste(im, (0, 0, im.size[0], im.size[1]))
     return padded
@@ -271,3 +275,18 @@ def in_model_path():
     finally:
         # os.chdir(saved)
         pass
+
+
+def read_yaml(yaml_path: str) -> Dict:
+    with open(yaml_path, "r", encoding="utf-8") as f:
+        params = yaml.load(f, Loader=yaml.FullLoader)
+    return params
+
+
+def write_yaml(save_path: Union[str, Path], content: Dict) -> None:
+    with open(save_path, "w+", encoding="utf-8") as f:
+        yaml.dump(content, f)
+
+
+def mkdir(dir_path):
+    Path(dir_path).mkdir(parents=True, exist_ok=True)
