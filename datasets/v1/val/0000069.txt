@@ -1,0 +1,1 @@
+g _ { J _ { 1 } \, J _ { 2 } } ^ { J } \bigl ( J _ { 1 } , M _ { 1 } ; J _ { 2 } , M _ { 2 } \vert J _ { 1 } , J _ { 2 } ; J , M _ { 1 } + M _ { 2 } \bigr ) \, \Bigl ( \xi _ { M _ { 1 } + M _ { 2 } } ^ { ( J ) } ( \sigma _ { 1 } ) + \mathrm { d e s c e n d a n t s } \Bigr ) \Bigr \} ,

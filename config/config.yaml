@@ -9,7 +9,7 @@ betas:
 batchsize: 64
 bos_token: 1
 channels: 1
-data: datasets/pkl/train.pkl
+data: datasets/v1/train
 debug: false
 decoder_args:
   attn_on_attn: true
@@ -52,4 +52,4 @@ test_samples: 5
 testbatchsize: 20
 tokenizer: datasets/tiny_origin/tokenizer.json
 valbatches: 100
-valdata: datasets/pkl/val.pkl
+valdata: datasets/v1/val

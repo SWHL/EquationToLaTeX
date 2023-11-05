@@ -1,9 +1,12 @@
 import glob
 import logging
 import os
+from pathlib import Path
 import pickle
 from collections import defaultdict
 from os.path import join
+import random
+from typing import List, Union
 
 import cv2
 import imagesize
@@ -11,11 +14,87 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import Dataset
 from tqdm.auto import tqdm
 from transformers import PreTrainedTokenizerFast
 
 from data.transforms import test_transform, train_transform
 from utils.utils import in_model_path
+
+
+class Equation2LatexDataset(Dataset):
+    def __init__(
+        self,
+        images=None,
+        tokenizer=None,
+        max_seq_len=1024,
+        max_dimensions=(1024, 512),
+        min_dimensions=(32, 32),
+        pad=False,
+        keep_smaller_batches=False,
+        test=False,
+    ) -> None:
+        self.images = [
+            path.replace("\\", "/") for path in glob.glob(join(images, "*.png"))
+        ]
+
+        self.tokenizer = PreTrainedTokenizerFast(tokenizer_file=tokenizer)
+
+        self.max_seq_len = max_seq_len
+        self.max_dimensions = max_dimensions
+        self.min_dimensions = min_dimensions
+        self.pad = pad
+        self.keep_smaller_batches = keep_smaller_batches
+        self.test = test
+
+        self.pad_token_id = 0
+        self.bos_token_id = 1
+        self.eos_token_id = 2
+
+        self.transform = test_transform if self.test else train_transform
+
+    def __getitem__(self, index):
+        img_path = self.images[index]
+        label_path = Path(img_path).with_suffix(".txt")
+        eq = self.read_txt(label_path)[0]
+
+        im = cv2.imread(img_path)
+        if im is None:
+            print("图像读取为None,重新选取")
+            return self.__getitem__(random.randint(0, len(self.images)))
+
+        im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+        if not self.test and np.random.random() < 0.04:
+            im[im != 255] = 0
+
+        im = self.transform(image=im)["image"][:1]
+        im = im.unsqueeze(1)
+        return eq, im
+
+    def __len__(
+        self,
+    ):
+        return len(self.images)
+
+    def batch_op(self, batch_data):
+        eqs, imgs = list(zip(*batch_data))
+        tok = self.tokenizer(eqs, return_token_type_ids=False)
+
+        for k, p in zip(tok, [[self.bos_token_id, self.eos_token_id], [1, 1]]):
+            tok[k] = pad_sequence(
+                [torch.LongTensor([p[0]] + x + [p[1]]) for x in tok[k]],
+                batch_first=True,
+                padding_value=self.pad_token_id,
+            )
+        if self.max_seq_len <= tok["attention_mask"].shape[1]:
+            return None, None
+        return tok, imgs
+
+    @staticmethod
+    def read_txt(txt_path: Union[Path, str]) -> List[str]:
+        with open(txt_path, "r", encoding="utf-8") as f:
+            data = [v.rstrip("\n") for v in f]
+        return data
 
 
 class Im2LatexDataset:
@@ -117,6 +196,7 @@ class Im2LatexDataset:
                 if len(batch) < self.batchsize and not self.keep_smaller_batches:
                     continue
                 self.pairs.append(batch)
+
         if self.shuffle:
             self.pairs = np.random.permutation(np.array(self.pairs, dtype=object))
         else:

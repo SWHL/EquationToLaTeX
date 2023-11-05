@@ -1,0 +1,1 @@
+S \sim \tilde { \psi } Q _ { o } \tilde { \psi } + g _ { s } ^ { 1 / 2 } \tilde { \psi } ^ { 3 } + \tilde { \phi } Q _ { c } \tilde { \phi } + g _ { s } \tilde { \phi } ^ { 3 } + \tilde { \phi } B ( g _ { s } ^ { 1 / 2 } \tilde { \psi } ) + \cdots .

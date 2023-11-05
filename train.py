@@ -5,11 +5,12 @@ import os
 from pathlib import Path
 
 import torch
+from torch.utils.data import DataLoader
 import wandb
 from munch import Munch
 from tqdm.auto import tqdm
 
-from data.dataset import Im2LatexDataset
+from data.dataset import Equation2LatexDataset
 from eval import evaluate
 from models import get_model
 from utils import (
@@ -24,15 +25,27 @@ from utils import (
     mkdir,
 )
 
+os.environ["OMP_NUM_THREADS"] = "1"
+
 
 def train(args):
-    dataloader = Im2LatexDataset().load(args.data)
-    dataloader.update(**args, test=False)
+    train_dataset = Equation2LatexDataset(args.data, args.tokenizer)
+    train_dataloader = DataLoader(
+        train_dataset,
+        batch_size=args.batchsize,
+        num_workers=1,
+        shuffle=True,
+        collate_fn=train_dataset.batch_op,
+    )
 
-    valdataloader = Im2LatexDataset().load(args.valdata)
-    valargs = args.copy()
-    valargs.update(batchsize=args.testbatchsize, keep_smaller_batches=True, test=True)
-    valdataloader.update(**valargs)
+    val_dataset = Equation2LatexDataset(args.valdata, args.tokenizer)
+    val_dataloader = DataLoader(
+        val_dataset,
+        batch_size=args.batchsize,
+        collate_fn=val_dataset.batch_op,
+        num_workers=1,
+        shuffle=False,
+    )
 
     device = args.device
 
@@ -70,11 +83,12 @@ def train(args):
     try:
         for e in range(args.epoch, args.epochs):
             args.epoch = e
-            dset = tqdm(iter(dataloader))
+            dset = tqdm(iter(train_dataloader))
             for i, (seq, im) in enumerate(dset):
                 if seq is None and im is None:
                     continue
 
+                im = im[0]
                 opt.zero_grad()
 
                 total_loss = 0
@@ -108,10 +122,10 @@ def train(args):
                 if args.wandb:
                     wandb.log({"train/loss": total_loss})
 
-                if (i + 1 + len(dataloader) * e) % args.sample_freq == 0:
+                if (i + 1 + len(train_dataloader) * e) % args.sample_freq == 0:
                     bleu_score, edit_distance, token_accuracy = evaluate(
                         model,
-                        valdataloader,
+                        val_dataloader,
                         args,
                         num_batches=int(args.valbatches * e / args.epochs),
                         name="val",
@@ -131,7 +145,7 @@ def train(args):
             save_models(e, step=i)
         raise KeyboardInterrupt
 
-    save_models(e, bleu=max_bleu, token_acc=max_token_acc, step=len(dataloader))
+    save_models(e, bleu=max_bleu, token_acc=max_token_acc, step=len(train_dataloader))
 
 
 if __name__ == "__main__":

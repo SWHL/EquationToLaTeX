@@ -1,0 +1,1 @@
+e ^ { A } = e ^ { A _ { 0 } } \left( t _ { 0 } - \mathrm { s i g n } ( m ) t \right) ^ { - \frac { m } { 2 } } \; , \; \; \; \; \chi = \chi _ { 0 } \left( t _ { 0 } - \mathrm { s i g n } ( m ) t \right) ^ { m } \; ,

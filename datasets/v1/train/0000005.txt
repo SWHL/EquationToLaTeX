@@ -1,0 +1,1 @@
+\hat { N } _ { 3 } = \sum \sp f _ { j = 1 } a _ { j } \sp { \dagger } a _ { j } \, .

@@ -1,0 +1,1 @@
+S _ { s t a t } = 2 \pi \sqrt { N _ { 5 } ^ { ( 1 ) } N _ { 5 } ^ { ( 2 ) } N _ { 5 } ^ { ( 3 ) } } \left( \sqrt { n } + \sqrt { \bar { n } } \right)

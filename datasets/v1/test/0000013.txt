@@ -1,0 +1,1 @@
+g _ { i j } ( x ) = { \frac { 1 } { a ^ { 2 } } } \, \delta _ { i j } , ~ ~ \phi ^ { a } ( x ) = \phi ^ { a } , \quad ( a , \phi ^ { a } \! : ~ \mathrm { c o n s t . } )
