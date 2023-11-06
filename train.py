@@ -3,6 +3,7 @@ import argparse
 import logging
 import os
 from pathlib import Path
+from typing import Optional
 
 import torch
 import wandb
@@ -17,11 +18,11 @@ from utils import (
     get_scheduler,
     gpu_memory_check,
     in_model_path,
-    parse_args,
-    seed_everything,
-    read_yaml,
-    write_yaml,
     mkdir,
+    parse_args,
+    read_yaml,
+    seed_everything,
+    write_yaml,
 )
 
 
@@ -48,11 +49,16 @@ def train(args):
     if args.load_chkpt is not None:
         model.load_state_dict(torch.load(args.load_chkpt, map_location=device))
 
-    def save_models(e, bleu, token_acc, step=0):
+    def save_models(
+        e, bleu: Optional[float] = None, token_acc: Optional[float] = None, step=0
+    ):
         save_model_path = (
             out_path
             / f"Epoch{e+1}_step{step:02d}_bleu{bleu:.4f}_tokenacc{token_acc:.4f}.pth"
         )
+        if bleu is None and token_acc is None:
+            save_model_path = out_path / "latest.pth"
+
         torch.save(model.state_dict(), str(save_model_path))
 
         save_yaml_path = out_path / "config.yaml"
@@ -120,18 +126,18 @@ def train(args):
                         max_bleu, max_token_acc = bleu_score, token_accuracy
                         save_models(e, bleu=max_bleu, token_acc=max_token_acc, step=i)
 
-            # if (e + 1) % args.save_freq == 0:
-            #     save_models(e, step=len(dataloader))
+            if (e + 1) % args.save_freq == 0:
+                save_models(e, step=len(dataloader))
 
             if args.wandb:
                 wandb.log({"train/epoch": e + 1})
 
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as exc:
         if e >= 2:
             save_models(e, step=i)
-        raise KeyboardInterrupt
+        raise KeyboardInterrupt from exc
 
-    save_models(e, bleu=max_bleu, token_acc=max_token_acc, step=len(dataloader))
+    save_models(e, step=len(dataloader))
 
 
 if __name__ == "__main__":
